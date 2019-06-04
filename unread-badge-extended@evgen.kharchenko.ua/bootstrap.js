@@ -200,7 +200,7 @@ net.streiff.unreadbadge = function ()
     */
    var overlayIconSize = (function ()
    {
-      var smallIconSize = 32;
+      var smallIconSize = 16;
       var appliedDpi = 96;
 
       let nsIWindowsRegKey = Components.classes["@mozilla.org/windows-registry-key;1"].getService(Components.interfaces.nsIWindowsRegKey);
@@ -219,7 +219,7 @@ net.streiff.unreadbadge = function ()
 
       nsIWindowsRegKey.close();
 
-      return (Math.floor(appliedDpi / 96 * smallIconSize))*4;
+      return (Math.floor(appliedDpi / 96 * smallIconSize));
    }
    )();
 
@@ -235,10 +235,10 @@ net.streiff.unreadbadge = function ()
          msgCount == 0;
 
       var msgText = "";
-      //if (msgCount <= 99)
+      if (msgCount <= 99)
          msgText = msgCount.toString();
-      //else
-      //   msgText = "99+";
+      else
+         msgText = "99+";
 
       let badge = gActiveWindow.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
       badge.width = badge.height = iconSize;
