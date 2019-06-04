@@ -26,7 +26,7 @@ net.streiff.unreadbadge = function ()
    const prefsPrefix = "extensions.unreadbadge.";
    const defaultPrefs =
    {
-      "badgeColor" : "#FF0000",
+      "badgeColor" : "#FF00FF",
       "textColor" : "#FFFFFF",
       "ignoreJunk" : true,
       "ignoreDrafts" : true,
@@ -200,7 +200,7 @@ net.streiff.unreadbadge = function ()
     */
    var overlayIconSize = (function ()
    {
-      var smallIconSize = 16;
+      var smallIconSize = 32;
       var appliedDpi = 96;
 
       let nsIWindowsRegKey = Components.classes["@mozilla.org/windows-registry-key;1"].getService(Components.interfaces.nsIWindowsRegKey);
@@ -219,7 +219,7 @@ net.streiff.unreadbadge = function ()
 
       nsIWindowsRegKey.close();
 
-      return (Math.floor(appliedDpi / 96 * smallIconSize));
+      return (Math.floor(appliedDpi / 96 * smallIconSize))*4;
    }
    )();
 
@@ -235,10 +235,10 @@ net.streiff.unreadbadge = function ()
          msgCount == 0;
 
       var msgText = "";
-      if (msgCount <= 99)
+      //if (msgCount <= 99)
          msgText = msgCount.toString();
-      else
-         msgText = "99+";
+      //else
+      //   msgText = "99+";
 
       let badge = gActiveWindow.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
       badge.width = badge.height = iconSize;
@@ -356,9 +356,19 @@ net.streiff.unreadbadge = function ()
 
       return xpc.taskbar.getOverlayIconController(docshell);
    }
+   
+   var getActiveWindowProgressController = function ()
+   {
+      let docshell = gActiveWindow.QueryInterface(Ci.nsIInterfaceRequestor)
+         .getInterface(Ci.nsIWebNavigation).QueryInterface(Ci.nsIDocShellTreeItem)
+         .treeOwner.QueryInterface(Ci.nsIInterfaceRequestor)
+         .getInterface(Ci.nsIXULWindow).docShell;
+
+      return xpc.taskbar.getTaskbarProgress(docshell);
+   }
 
    var updateTimerId = null;
-
+	var lastProgressState = 4;
    var updateOverlayIcon = function ()
    {
       if (gActiveWindow)
@@ -376,6 +386,17 @@ net.streiff.unreadbadge = function ()
          {
             controller.setOverlayIcon(null, "");
          }
+		 
+		 //TMP!
+		 if( lastProgressState == 4 )
+		 {
+			 lastProgressState = 3;
+		 }
+		 else
+		 {
+			 lastProgressState = 4;
+		 }
+		 getActiveWindowProgressController().setProgressState( lastProgressState );
 
          gActiveWindow.clearTimeout(updateTimerId);
          updateTimerId = null;
