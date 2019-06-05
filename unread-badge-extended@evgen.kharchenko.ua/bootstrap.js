@@ -23,16 +23,18 @@ net.streiff.unreadbadge = function ()
     */
    const nsMsgFolderFlags = Ci.nsMsgFolderFlags;
 
-   const prefsPrefix = "extensions.unreadbadge.";
+   const prefsPrefix = "extensions.unreadbadgeextended.";
    const defaultPrefs =
    {
-      "badgeColor" : "#FF00FF",
-      "textColor" : "#FFFFFF",
-      "ignoreJunk" : true,
-      "ignoreDrafts" : true,
-      "ignoreTrash" : true,
-      "ignoreSent" : true,
-      "inboxOnly" : false
+       "badgeColor": "#00FFA0",
+       "badgeColorImportant": "#FF5000",
+       "textColor": "#FFFFFF",
+       "ignoreJunk": true,
+       "ignoreDrafts": true,
+       "ignoreTrash": true,
+       "ignoreSent": true,
+       "inboxOnly": false,
+       "importantFolders": "[\"Important\", \"AN2\"]",
    };
 
    Components.utils.import("resource://gre/modules/Services.jsm");
@@ -108,14 +110,15 @@ net.streiff.unreadbadge = function ()
       xpc.imgTools.encodeImage(imgIContainer, "image/png");
    }
 
-   var createCircularBadgeStyle = function (imageWidth, imageHeight, canvas, text)
+   var createCircularBadgeStyle = function (imageWidth, imageHeight, canvas, text, hasImportant)
    {
       var cxt = canvas.getContext("2d");
 
       // Draw the background.
       cxt.save();
-      // Solid color first.
-      cxt.fillStyle = Services.prefs.getCharPref(prefsPrefix + "badgeColor");
+       // Solid color first.
+      var badgeColor = hasImportant ? Services.prefs.getCharPref(prefsPrefix + "badgeColorImportant") : Services.prefs.getCharPref(prefsPrefix + "badgeColor");
+      cxt.fillStyle = badgeColor;
       cxt.beginPath();
       cxt.arc(imageWidth / 2, imageHeight / 2, imageWidth / 2.15, 0, Math.PI * 2, true);
       cxt.fill();
@@ -227,7 +230,7 @@ net.streiff.unreadbadge = function ()
     *
     * Returns an imgIContainer.
     */
-   var createBadgeIcon = function (msgCount)
+   var createBadgeIcon = function (msgCount, hasImportant)
    {
       const iconSize = overlayIconSize;
 
@@ -243,7 +246,7 @@ net.streiff.unreadbadge = function ()
       let badge = gActiveWindow.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
       badge.width = badge.height = iconSize;
       badge.style.width = badge.style.height = iconSize + "px";
-      createCircularBadgeStyle(iconSize, iconSize, badge, msgText);
+      createCircularBadgeStyle(iconSize, iconSize, badge, msgText, hasImportant);
 
       return getCanvasAsImgContainer(badge, iconSize, iconSize);
    }
@@ -288,11 +291,13 @@ net.streiff.unreadbadge = function ()
    /* Enumerate all accounts and get the combined unread count. */
    var getUnreadCountForAllAccounts = function ()
    {
+      var result = { "totalCount": 0, "importantCount": 0 };
       let accounts = xpc.acctMgr.accounts;
       let totalCount = 0;
       let accountEnumerator = accounts.enumerate();
       let ignoreMask = 0;
       let acceptMask = -1;
+      var importantFoldersArray = [];
 
       /* Only look at primary inbox? */
       if (Services.prefs.getBoolPref(prefsPrefix + "inboxOnly"))
@@ -310,7 +315,15 @@ net.streiff.unreadbadge = function ()
       if (Services.prefs.getBoolPref(prefsPrefix + "ignoreTrash"))
          ignoreMask |= nsMsgFolderFlags.Trash;
       if (Services.prefs.getBoolPref(prefsPrefix + "ignoreSent"))
-         ignoreMask |= nsMsgFolderFlags.SentMail;
+          ignoreMask |= nsMsgFolderFlags.SentMail;
+
+      let importantFoldersJson = Services.prefs.getCharPref(prefsPrefix + "importantFolders");
+      if (importantFoldersJson && importantFoldersJson.length != 0)
+          try {
+              importantFoldersArray = JSON.parse(importantFoldersJson);
+          }
+          catch (err) {
+          }
 
       while (accountEnumerator.hasMoreElements())
       {
@@ -323,14 +336,16 @@ net.streiff.unreadbadge = function ()
          Apparently you have to get all subfolders that are inboxes and do
          getNumUnread(true) on *those*. */
          if (((rootFolder.flags & ignoreMask) == 0) && (account.incomingServer.type != "rss"))
-            totalCount += getUnreadCountForFolder(rootFolder, ignoreMask, acceptMask);
+             var folderResult = getUnreadCountForFolder(rootFolder, ignoreMask, acceptMask, importantFoldersArray);
+             result["totalCount"] += folderResult["totalCount"];
+             result["importantCount"] += folderResult["importantCount"];
       }
-      return totalCount;
+      return result;
    }
 
-   var getUnreadCountForFolder = function (folder, ignoreMask, acceptMask)
+   var getUnreadCountForFolder = function (folder, ignoreMask, acceptMask, importantFoldersArray)
    {
-      var totalCount = 0;
+      var result = { "totalCount": 0, "importantCount": 0 };
       var subfoldersEnumerator = folder.subFolders;
       while (subfoldersEnumerator.hasMoreElements())
       {
@@ -338,13 +353,24 @@ net.streiff.unreadbadge = function ()
 
          /* If there are subfolders, recurse. */
          if (subfolder.hasSubFolders)
-            totalCount += getUnreadCountForFolder(subfolder, ignoreMask, acceptMask);
+         {
+             var subFolderResult = getUnreadCountForFolder(subfolder, ignoreMask, acceptMask, importantFoldersArray);
+             result["totalCount"] += subFolderResult["totalCount"];
+             result["importantCount"] += subFolderResult["importantCount"];
+         }
 
          /* Only add to the unread count if it's not a type we want to ignore. */
          if (((subfolder.flags & ignoreMask) == 0) && !!(subfolder.flags & acceptMask))
-            totalCount += subfolder.getNumUnread(false);
+         {
+             result["totalCount"] += subfolder.getNumUnread(false);
+             var folderName = subfolder.name;
+             if (importantFoldersArray.indexOf(folderName) != -1)
+             {
+                 result["importantCount"] += subfolder.getNumUnread(false);
+             }
+         }
       }
-      return totalCount;
+      return result;
    }
 
    var getActiveWindowOverlayIconController = function ()
@@ -368,35 +394,34 @@ net.streiff.unreadbadge = function ()
    }
 
    var updateTimerId = null;
-	var lastProgressState = 4;
+   var blinkTimerId = null;
+   var lastProgressState = 0;
+   var lastMessageCount = 0;
+   var lastImportantCount = 0;
+
    var updateOverlayIcon = function ()
    {
       if (gActiveWindow)
       {
          let controller = getActiveWindowOverlayIconController();
 
-         var messageCount = getUnreadCountForAllAccounts();
-         if (messageCount > 0)
+         var countResult = getUnreadCountForAllAccounts();
+         lastMessageCount = countResult["totalCount"];
+         lastImportantCount = countResult["importantCount"];
+         var hasImportant = (lastImportantCount > 0);
+
+         if (lastMessageCount > 0)
          {
-            var icon = createBadgeIcon(messageCount);
+            var icon = createBadgeIcon(lastMessageCount, lastImportantCount);
             forceImgIContainerDecode(icon);
             controller.setOverlayIcon(icon, "Message Count");
+            setBlinkEnabled(hasImportant);
          }
          else
          {
-            controller.setOverlayIcon(null, "");
+             controller.setOverlayIcon(null, "");
+             setBlinkEnabled(false);
          }
-		 
-		 //TMP!
-		 if( lastProgressState == 4 )
-		 {
-			 lastProgressState = 3;
-		 }
-		 else
-		 {
-			 lastProgressState = 4;
-		 }
-		 getActiveWindowProgressController().setProgressState( lastProgressState );
 
          gActiveWindow.clearTimeout(updateTimerId);
          updateTimerId = null;
@@ -422,6 +447,49 @@ net.streiff.unreadbadge = function ()
             updateTimerId = gActiveWindow.setTimeout(updateOverlayIcon, 100);
          }
       }
+   }
+
+    //Blinking
+   var setBlinkEnabled = function ( enabled ) {
+       if (gActiveWindow) {
+           if (enabled) {
+               if (blinkTimerId == null) {
+                  blinkTimerId = gActiveWindow.setInterval(updateBlink, 1000);
+               }
+           }
+           else {
+               if (blinkTimerId != null) {
+                   gActiveWindow.clearInterval(blinkTimerId);
+                   blinkTimerId = null;
+               }
+
+               lastProgressState = 0;
+               getActiveWindowProgressController().setProgressState(lastProgressState);
+           }
+       }
+   }
+
+   var updateBlink = function ()
+   {
+       if (gActiveWindow)
+       {
+           if (lastProgressState == 3) {
+               lastProgressState = 4;
+           }
+           else
+           {
+               lastProgressState = 3;
+           }
+
+           getActiveWindowProgressController().setProgressState(lastProgressState, 100, 100);
+
+           //Need to set badge icon again, cause sometimes changing progress resets the badge.
+
+           let iconController = getActiveWindowOverlayIconController();
+           var icon = createBadgeIcon(lastMessageCount, lastImportantCount);
+           forceImgIContainerDecode(icon);
+           iconController.setOverlayIcon(icon, "Message Count");
+       }
    }
 
    /* Implementation of nsIFolderListener */

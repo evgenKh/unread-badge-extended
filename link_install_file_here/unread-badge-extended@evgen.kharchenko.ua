@@ -1,1 +1,1 @@
-d:\prava_molod_bots\thunderbird_extension\fork\unread-badge-extended@evgen.kharchenko.ua\
+d:\Projects\thunderbird_extension\unread-badge-extended\unread-badge-extended@evgen.kharchenko.ua\
